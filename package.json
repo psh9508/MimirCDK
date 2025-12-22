@@ -9,20 +9,23 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "bootstrap": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk bootstrap",  
+    "bootstrap": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk bootstrap",
     "deploy": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk deploy"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^24.10.1",
+    "@types/yamljs": "^0.2.34",
+    "aws-cdk": "2.1100.1",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
-    "aws-cdk": "2.1100.1",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.3"
   },
   "dependencies": {
     "aws-cdk-lib": "2.232.1",
-    "constructs": "^10.0.0"
+    "constructs": "^10.0.0",
+    "yamljs": "^0.3.0",
+    "zod": "^4.2.1"
   }
 }

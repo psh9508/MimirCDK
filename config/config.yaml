@@ -1,0 +1,3 @@
+escServices:
+  - name: AuthServer
+    port: 8000   
