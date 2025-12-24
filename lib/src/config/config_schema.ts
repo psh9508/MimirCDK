@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const ecsServiceConfigSchema = z.object({
   name: z.string(),
-  prot: z.number(),
+  port: z.number(),
 });
 
 export const configSchema = z.object({
