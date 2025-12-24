@@ -6,7 +6,8 @@ export const ecsServiceConfigSchema = z.object({
 });
 
 export const configSchema = z.object({
-  escServices: z.array(ecsServiceConfigSchema).default([]),
+  ecsServices: z.array(ecsServiceConfigSchema).default([]),
 });
 
+export type EcsServiceConfig = z.infer<typeof ecsServiceConfigSchema>;
 export type Config = z.infer<typeof configSchema>;

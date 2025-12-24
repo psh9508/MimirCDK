@@ -13,7 +13,7 @@ function loadYaml(filename: string) {
   return {};
 }
 
-function getConfig(): Config {
+export function getConfig(): Config {
   const raw = loadYaml('config.yaml');
   return configSchema.parse(raw);
 }
