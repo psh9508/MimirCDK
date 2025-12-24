@@ -9,12 +9,19 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as fs from 'fs';
+import * as yaml from 'yamljs';
 
 const config = getConfig();
 
 export class MimirCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    const buildSpecObject = yaml.parse(
+      fs.readFileSync('pipeline/buildspec-build.yml', 'utf8'),
+    );
+    const buildSpec = codebuild.BuildSpec.fromObject(buildSpecObject);
 
     const cicdRootBucket = new s3.Bucket(this, 'cicd-root-bucket', {
       bucketName: 'codepipeline-mimir-cicd',
@@ -84,8 +91,15 @@ export class MimirCdkStack extends cdk.Stack {
             GIT_PROJECT_NAME: { value: serviceName },
           },
         },
-        buildSpec: codebuild.BuildSpec.fromSourceFilename('pipeline/buildspec-build.yml'),
+        buildSpec,
       });
+      ecrRepository.grantPullPush(buildProject);
+      buildProject.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['ecr:GetAuthorizationToken'],
+          resources: ['*'],
+        }),
+      );
       codeBuildActionRole.addToPolicy(
         new iam.PolicyStatement({
           actions: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
