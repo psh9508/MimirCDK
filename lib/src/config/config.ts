@@ -10,7 +10,7 @@ function loadYaml(filename: string) {
     return YAML.load(path);
   }
 
-  return {};
+  throw new Error(`Config file not found: ${path}`);
 }
 
 export function getConfig(): Config {
