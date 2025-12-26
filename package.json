@@ -10,7 +10,7 @@
     "test": "jest",
     "cdk": "cdk",
     "bootstrap": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk bootstrap",
-    "deploy": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk deploy"
+    "deploy": "eval $(aws configure export-credentials --profile cam2025-superpower --format env) && cdk deploy --require-approval never"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

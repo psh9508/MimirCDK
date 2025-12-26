@@ -1,3 +1,4 @@
 ecsServices:
   - name: AuthServer
     port: 8000
+    desiredCount: 1

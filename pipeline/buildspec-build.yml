@@ -23,7 +23,9 @@ phases:
     commands:
       - set -e
       - echo Pushing the Docker image...
+      - docker tag ${DOCKER_URL} ${IMAGE_URL}:latest
       - docker push ${DOCKER_URL}
+      - docker push ${IMAGE_URL}:latest
       - echo Writing imagedefinitions.json...
       - printf '[{"name":"%s","imageUri":"%s"}]' "${GIT_PROJECT_NAME}" "${DOCKER_URL}" > imagedefinitions.json
 
