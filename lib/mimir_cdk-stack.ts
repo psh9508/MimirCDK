@@ -14,6 +14,7 @@ import * as yaml from 'yamljs';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 
 const config = getConfig();
 
@@ -52,24 +53,24 @@ export class MimirCdkStack extends cdk.Stack {
       ],
     });
     // PrivateLink endpoints so Fargate tasks can reach ECR/Logs/S3 without NAT
-    // vpc.addInterfaceEndpoint('ecr-api-endpoint', {
-    //   service: ec2.InterfaceVpcEndpointAwsService.ECR,
-    //   privateDnsEnabled: true,
-    //   subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    // });
-    // vpc.addInterfaceEndpoint('ecr-dkr-endpoint', {
-    //   service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-    //   privateDnsEnabled: true,
-    //   subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    // });
-    // vpc.addInterfaceEndpoint('cloudwatch-logs-endpoint', {
-    //   service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-    //   privateDnsEnabled: true,
-    //   subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    // });
-    // vpc.addGatewayEndpoint('s3-endpoint', {
-    //   service: ec2.GatewayVpcEndpointAwsService.S3,
-    // });
+    vpc.addInterfaceEndpoint('ecr-api-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
+    vpc.addInterfaceEndpoint('ecr-dkr-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
+    vpc.addInterfaceEndpoint('cloudwatch-logs-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
+    vpc.addGatewayEndpoint('s3-endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
     const cluster = new ecs.Cluster(this, 'mimir-cicd-cluster', { vpc });
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
@@ -77,6 +78,12 @@ export class MimirCdkStack extends cdk.Stack {
       description: 'Allow inbound service traffic',
     });
     serviceSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcpRange(80, 65535), 'Allow HTTP range');
+    const taskExecutionRole = new iam.Role(this, 'ecs-task-execution-role', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+      ],
+    });
 
     for (const ecsService of config.ecsServices) {
       const serviceName = ecsService.name;
@@ -167,6 +174,7 @@ export class MimirCdkStack extends cdk.Stack {
       const taskDefinition = new ecs.FargateTaskDefinition(this, `${serviceName}-taskdef`, {
         cpu: 256,
         memoryLimitMiB: 512,
+        executionRole: taskExecutionRole,
       });
       taskDefinition.addContainer(serviceName, {
         image: ecs.ContainerImage.fromEcrRepository(ecrRepository),
@@ -189,6 +197,55 @@ export class MimirCdkStack extends cdk.Stack {
         securityGroups: [serviceSecurityGroup],
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
+
+      if (ecsService.publicLb) {
+        const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
+          vpc,
+          allowAllOutbound: true,
+          description: `Public load balancer for ${serviceName}`,
+        });
+        loadBalancerSecurityGroup.addIngressRule(
+          ec2.Peer.anyIpv4(),
+          ec2.Port.tcp(80),
+          'Allow HTTP traffic to load balancer',
+        );
+        serviceSecurityGroup.addIngressRule(
+          loadBalancerSecurityGroup,
+          ec2.Port.tcp(ecsService.port),
+          `Allow public LB to reach ${serviceName}`,
+        );
+
+        const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
+          vpc,
+          internetFacing: true,
+          vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+          securityGroup: loadBalancerSecurityGroup,
+          loadBalancerName: `${ecsService.publicLb.domainHead}-alb`,
+        });
+
+        const listener = loadBalancer.addListener(`${serviceName}-listener`, {
+          port: 80,
+          open: true,
+        });
+
+        listener.addTargets(`${serviceName}-targets`, {
+          port: ecsService.port,
+          targets: [
+            fargateService.loadBalancerTarget({
+              containerName: serviceName,
+              containerPort: ecsService.port,
+            }),
+          ],
+          healthCheck: {
+            path: '/',
+            healthyHttpCodes: '200-399',
+          },
+        });
+
+        new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
+          value: loadBalancer.loadBalancerDnsName,
+        });
+      }
 
       pipeline.addStage({
         stageName: 'Deploy',

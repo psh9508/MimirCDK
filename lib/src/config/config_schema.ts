@@ -4,6 +4,11 @@ export const ecsServiceConfigSchema = z.object({
   name: z.string(),
   port: z.number(),
   desiredCount: z.number().default(1),
+  publicLb: z
+    .object({
+      domainHead: z.string(),
+    })
+    .optional(),
 });
 
 export const configSchema = z.object({

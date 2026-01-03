@@ -2,3 +2,5 @@ ecsServices:
   - name: AuthServer
     port: 8000
     desiredCount: 1
+    publicLb:
+      domainHead: mimir-server
