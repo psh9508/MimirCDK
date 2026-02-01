@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const ecsServiceConfigSchema = z.object({
   name: z.string(),
   port: z.number(),
+  cpu: z.number().default(256),
+  memory: z.number().default(512),
   desiredCount: z.number().default(1),
   publicLb: z
     .object({

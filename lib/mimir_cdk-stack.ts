@@ -172,8 +172,8 @@ export class MimirCdkStack extends cdk.Stack {
 
       // 3. deploy
       const taskDefinition = new ecs.FargateTaskDefinition(this, `${serviceName}-taskdef`, {
-        cpu: 256,
-        memoryLimitMiB: 512,
+        cpu: ecsService.cpu,
+        memoryLimitMiB: ecsService.memory,
         executionRole: taskExecutionRole,
       });
       taskDefinition.addContainer(serviceName, {
