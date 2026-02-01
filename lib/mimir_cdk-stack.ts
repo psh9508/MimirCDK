@@ -11,6 +11,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
 
 const config = getConfig();
@@ -98,6 +99,13 @@ export class MimirCdkStack extends cdk.Stack {
         memoryLimitMiB: ecsService.memory,
         executionRole: taskExecutionRole,
       });
+
+      // Create secret in Secrets Manager for this service
+      new secretsmanager.Secret(this, `${serviceName}-secret`, {
+        secretName: serviceName,
+        description: `Secret for ${serviceName}`,
+      });
+
       taskDefinition.addContainer(serviceName, {
         image: ecs.ContainerImage.fromEcrRepository(ecrRepository),
         logging: ecs.LogDrivers.awsLogs({
@@ -114,7 +122,7 @@ export class MimirCdkStack extends cdk.Stack {
         ],
       });
 
-      // ECS Fargate Service
+      // ECS Fargate Service (desiredCount: 0 이면 태스크 없이 서비스만 생성)
       const fargateService = new ecs.FargateService(this, `${serviceName}-service`, {
         cluster,
         taskDefinition,
@@ -123,24 +131,23 @@ export class MimirCdkStack extends cdk.Stack {
         securityGroups: [serviceSecurityGroup],
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
-
       // Public Load Balancer (optional)
-      if (ecsService.publicLb) {
-        const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
-          vpc,
-          allowAllOutbound: true,
-          description: `Public load balancer for ${serviceName}`,
-        });
-        loadBalancerSecurityGroup.addIngressRule(
-          ec2.Peer.anyIpv4(),
-          ec2.Port.tcp(80),
-          'Allow HTTP traffic to load balancer',
-        );
-        serviceSecurityGroup.addIngressRule(
-          loadBalancerSecurityGroup,
-          ec2.Port.tcp(ecsService.port),
-          `Allow public LB to reach ${serviceName}`,
-        );
+      // if (ecsService.publicLb) {
+        // const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
+        //   vpc,
+        //   allowAllOutbound: true,
+        //   description: `Public load balancer for ${serviceName}`,
+        // });
+        // loadBalancerSecurityGroup.addIngressRule(
+        //   ec2.Peer.anyIpv4(),
+        //   ec2.Port.tcp(80),
+        //   'Allow HTTP traffic to load balancer',
+        // );
+        // serviceSecurityGroup.addIngressRule(
+        //   loadBalancerSecurityGroup,
+        //   ec2.Port.tcp(ecsService.port),
+        //   `Allow public LB to reach ${serviceName}`,
+        // );
 
     //     const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
     //       vpc,
@@ -172,8 +179,7 @@ export class MimirCdkStack extends cdk.Stack {
     //     new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
     //       value: loadBalancer.loadBalancerDnsName,
     //     });
-      }
-
+      // }
       // CI/CD Pipeline
       new EcsServicePipeline(this, `${serviceName}-pipeline`, {
         serviceName,

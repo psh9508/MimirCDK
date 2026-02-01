@@ -3,6 +3,6 @@ ecsServices:
     port: 8000
     cpu: 256
     memory: 512
-    desiredCount: 1
+    desiredCount: 0
     publicLb:
       domainHead: mimir-server

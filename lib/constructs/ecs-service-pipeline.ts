@@ -15,7 +15,7 @@ export interface EcsServicePipelineProps {
   artifactBucket: s3.IBucket;
   ecrRepository: ecr.IRepository;
   buildSpec: codebuild.BuildSpec;
-  fargateService: ecs.FargateService;
+  fargateService?: ecs.FargateService; // optional - deploy stage only added if provided
 }
 
 export class EcsServicePipeline extends Construct {
@@ -104,16 +104,18 @@ export class EcsServicePipeline extends Construct {
       actions: [buildAction],
     });
 
-    // 3. Deploy Stage
-    this.pipeline.addStage({
-      stageName: 'Deploy',
-      actions: [
-        new aws_codepipeline_actions.EcsDeployAction({
-          actionName: 'DeployToEcs',
-          service: fargateService,
-          input: buildOutput,
-        }),
-      ],
-    });
+    // 3. Deploy Stage (only if fargateService is provided)
+    if (fargateService) {
+      this.pipeline.addStage({
+        stageName: 'Deploy',
+        actions: [
+          new aws_codepipeline_actions.EcsDeployAction({
+            actionName: 'DeployToEcs',
+            service: fargateService,
+            input: buildOutput,
+          }),
+        ],
+      });
+    }
   }
 }
