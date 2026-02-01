@@ -2,19 +2,16 @@ import * as cdk from 'aws-cdk-lib/core';
 import { Construct } from 'constructs';
 import { getConfig } from './src/config/config';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as codepipeline from 'aws-cdk-lib/aws-codepipeline';
-import { aws_codepipeline_actions } from 'aws-cdk-lib';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as fs from 'fs';
 import * as yaml from 'yamljs';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
 
 const config = getConfig();
 
@@ -89,88 +86,13 @@ export class MimirCdkStack extends cdk.Stack {
       const serviceName = ecsService.name;
       const repositoryName = `mimir/${serviceName.toLowerCase()}`;
 
-      const ecrRepository = new ecr.Repository(this, `${serviceName}-repository`, {
+      const ecrRepository = ecr.Repository.fromRepositoryName(
+        this,
+        `${serviceName}-repository`,
         repositoryName,
-      });
-
-      const pipeline = new codepipeline.Pipeline(this, `${serviceName}-pipeline`, {
-        pipelineName: `${serviceName}-CICD`,
-        artifactBucket: cicdRootBucket,
-      });
-
-      // S3 Object Created 이벤트 → EventBridge → CodePipeline 전체 실행
-      new events.Rule(this, `${serviceName}-source-upload-rule`, {
-        eventPattern: {
-          source: ['aws.s3'],
-          detailType: ['Object Created'],
-          detail: {
-            bucket: { name: [cicdRootBucket.bucketName] },
-            object: { key: [{ prefix: `${serviceName}/source.zip` }] },
-          },
-        },
-        targets: [new targets.CodePipeline(pipeline)],
-      });
-
-      // 1. source
-      const sourceOutput = new codepipeline.Artifact(`${serviceName}_Artifact`);
-      const sourceAction = new aws_codepipeline_actions.S3SourceAction({
-        actionName: 'DownloadSourceCode',
-        bucket: cicdRootBucket,
-        bucketKey: `${serviceName}/source.zip`,
-        output: sourceOutput
-      });
-      pipeline.addStage({
-        stageName: 'Source',
-        actions: [sourceAction],
-      });
-
-      // 2. build
-      const buildOutput = new codepipeline.Artifact(`${serviceName}_BuildArtifact`);
-      const codeBuildActionRole = new iam.Role(this, `${serviceName}-codebuild-action-role`, {
-        assumedBy: new iam.ArnPrincipal(pipeline.role!.roleArn),
-      });
-      cicdRootBucket.grantReadWrite(codeBuildActionRole);
-
-      const buildProject = new codebuild.PipelineProject(this, `${serviceName}-build-project`, {
-        projectName: `${serviceName}-build`,
-        environment: {
-          buildImage: codebuild.LinuxBuildImage.STANDARD_7_0,
-          privileged: true,
-          environmentVariables: {
-            ECR_REGION: { value: cdk.Stack.of(this).region },
-            ECR_REPO_NAME: { value: ecrRepository.repositoryName },
-            GIT_PROJECT_NAME: { value: serviceName },
-          },
-        },
-        buildSpec,
-      });
-      ecrRepository.grantPullPush(buildProject);
-      buildProject.addToRolePolicy(
-        new iam.PolicyStatement({
-          actions: ['ecr:GetAuthorizationToken'],
-          resources: ['*'],
-        }),
-      );
-      codeBuildActionRole.addToPolicy(
-        new iam.PolicyStatement({
-          actions: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
-          resources: [buildProject.projectArn],
-        }),
       );
 
-      const buildAction = new aws_codepipeline_actions.CodeBuildAction({
-        actionName: 'BuildAndPushImage',
-        project: buildProject,
-        role: codeBuildActionRole,
-        input: sourceOutput,
-        outputs: [buildOutput],
-      });
-      pipeline.addStage({
-        stageName: 'Build',
-        actions: [buildAction],
-      });
-
-      // 3. deploy
+      // ECS Task Definition
       const taskDefinition = new ecs.FargateTaskDefinition(this, `${serviceName}-taskdef`, {
         cpu: ecsService.cpu,
         memoryLimitMiB: ecsService.memory,
@@ -189,6 +111,7 @@ export class MimirCdkStack extends cdk.Stack {
         ],
       });
 
+      // ECS Fargate Service
       const fargateService = new ecs.FargateService(this, `${serviceName}-service`, {
         cluster,
         taskDefinition,
@@ -198,6 +121,7 @@ export class MimirCdkStack extends cdk.Stack {
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
 
+      // Public Load Balancer (optional)
       if (ecsService.publicLb) {
         const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
           vpc,
@@ -215,47 +139,45 @@ export class MimirCdkStack extends cdk.Stack {
           `Allow public LB to reach ${serviceName}`,
         );
 
-        const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
-          vpc,
-          internetFacing: true,
-          vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-          securityGroup: loadBalancerSecurityGroup,
-          loadBalancerName: `${ecsService.publicLb.domainHead}-alb`,
-        });
+    //     const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
+    //       vpc,
+    //       internetFacing: true,
+    //       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+    //       securityGroup: loadBalancerSecurityGroup,
+    //       loadBalancerName: `${ecsService.publicLb.domainHead}-alb`,
+    //     });
 
-        const listener = loadBalancer.addListener(`${serviceName}-listener`, {
-          port: 80,
-          open: true,
-        });
+    //     const listener = loadBalancer.addListener(`${serviceName}-listener`, {
+    //       port: 80,
+    //       open: true,
+    //     });
 
-        listener.addTargets(`${serviceName}-targets`, {
-          port: ecsService.port,
-          targets: [
-            fargateService.loadBalancerTarget({
-              containerName: serviceName,
-              containerPort: ecsService.port,
-            }),
-          ],
-          healthCheck: {
-            path: '/',
-            healthyHttpCodes: '200-399',
-          },
-        });
+    //     listener.addTargets(`${serviceName}-targets`, {
+    //       port: ecsService.port,
+    //       targets: [
+    //         fargateService.loadBalancerTarget({
+    //           containerName: serviceName,
+    //           containerPort: ecsService.port,
+    //         }),
+    //       ],
+    //       healthCheck: {
+    //         path: '/',
+    //         healthyHttpCodes: '200-399',
+    //       },
+    //     });
 
-        new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
-          value: loadBalancer.loadBalancerDnsName,
-        });
+    //     new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
+    //       value: loadBalancer.loadBalancerDnsName,
+    //     });
       }
 
-      pipeline.addStage({
-        stageName: 'Deploy',
-        actions: [
-          new aws_codepipeline_actions.EcsDeployAction({
-            actionName: 'DeployToEcs',
-            service: fargateService,
-            input: buildOutput,
-          }),
-        ],
+      // CI/CD Pipeline
+      new EcsServicePipeline(this, `${serviceName}-pipeline`, {
+        serviceName,
+        artifactBucket: cicdRootBucket,
+        ecrRepository,
+        buildSpec,
+        fargateService,
       });
     }
   }
