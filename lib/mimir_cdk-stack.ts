@@ -104,6 +104,9 @@ export class MimirCdkStack extends cdk.Stack {
           streamPrefix: serviceName,
           logRetention: logs.RetentionDays.ONE_WEEK,
         }),
+        environment: {
+          ENV: 'dev',
+        },
         portMappings: [
           {
             containerPort: ecsService.port,
