@@ -4,5 +4,10 @@ ecsServices:
     cpu: 256
     memory: 512
     desiredCount: 0
+    secrets:
+      - name: ENV_DB_PASSWORD
+      - name: ENV_RABBITMQ_PASSWORD
+      - name: ENV_JWT_SECRET
+      - name: ENV_JWT_REFRESH_SECRET
     publicLb:
       domainHead: mimir-server

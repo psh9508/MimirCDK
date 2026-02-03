@@ -100,11 +100,21 @@ export class MimirCdkStack extends cdk.Stack {
         executionRole: taskExecutionRole,
       });
 
-      // Create secret in Secrets Manager for this service
-      new secretsmanager.Secret(this, `${serviceName}-secret`, {
+      // Create secret in Secrets Manager and build container secrets map
+      const secretKeys = ecsService.secrets?.map(s => s.name) || [];
+      const secretTemplate = Object.fromEntries(secretKeys.map(key => [key, '']));
+
+      const secret = new secretsmanager.Secret(this, `${serviceName}-secret`, {
         secretName: serviceName,
         description: `Secret for ${serviceName}`,
+        secretStringValue: cdk.SecretValue.unsafePlainText(JSON.stringify(secretTemplate)),
       });
+
+      secret.grantRead(taskExecutionRole);
+
+      const containerSecrets = Object.fromEntries(
+        secretKeys.map(key => [key, ecs.Secret.fromSecretsManager(secret, key)])
+      );
 
       taskDefinition.addContainer(serviceName, {
         image: ecs.ContainerImage.fromEcrRepository(ecrRepository),
@@ -115,6 +125,7 @@ export class MimirCdkStack extends cdk.Stack {
         environment: {
           ENV: 'dev',
         },
+        secrets: containerSecrets,
         portMappings: [
           {
             containerPort: ecsService.port,
