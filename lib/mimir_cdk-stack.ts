@@ -13,6 +13,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
+import { EcsMonitoring } from './constructs/ecs-monitoring';
 
 const config = getConfig();
 
@@ -69,6 +70,11 @@ export class MimirCdkStack extends cdk.Stack {
     vpc.addGatewayEndpoint('s3-endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
+    vpc.addInterfaceEndpoint('ssm-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.SSM,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
     const cluster = new ecs.Cluster(this, 'mimir-cicd-cluster', { vpc });
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
@@ -81,6 +87,11 @@ export class MimirCdkStack extends cdk.Stack {
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
       ],
+    });
+
+    new EcsMonitoring(this, 'ecs-monitoring', {
+      vpc,
+      mainServiceSecurityGroup: serviceSecurityGroup,
     });
 
     for (const ecsService of config.ecsServices) {
