@@ -6,7 +6,6 @@ import * as efs from 'aws-cdk-lib/aws-efs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 export interface EcsMonitoringProps {
   vpc: ec2.IVpc;
@@ -28,8 +27,7 @@ interface VictoriaServiceSpec {
   };
   command?: string[];
   entryPoint?: string[];
-  secrets?: Record<string, ecs.Secret>;
-  secretParameters?: ssm.IStringParameter[];
+  environment?: Record<string, string>;
 }
 
 export class EcsMonitoring extends Construct {
@@ -191,11 +189,8 @@ export class EcsMonitoring extends Construct {
       accessPoints.logs,
     );
 
-    const scrapeConfigParameter = ssm.StringParameter.fromStringParameterName(
-      this,
-      'victoria-metrics-scrape-config',
-      'victoriametrics-scrape-config',
-    );
+    const scrapeConfigValue = this.generateScrapeConfig();
+
     const vmCommand = [
       'mkdir -p /etc/victoriametrics && ' +
         'printf "%s" "$VM_SCRAPE_CONFIG" > /etc/victoriametrics/scrape.yaml && ' +
@@ -219,10 +214,9 @@ export class EcsMonitoring extends Construct {
           retries: 3,
           startPeriod: 60,
         },
-        secrets: {
-          VM_SCRAPE_CONFIG: ecs.Secret.fromSsmParameter(scrapeConfigParameter),
+        environment: {
+          VM_SCRAPE_CONFIG: scrapeConfigValue,
         },
-        secretParameters: [scrapeConfigParameter],
       },
       accessPoints.metrics,
     );
@@ -287,8 +281,6 @@ export class EcsMonitoring extends Construct {
         resources: [this.fileSystem.fileSystemArn, accessPoint.accessPointArn],
       }),
     );
-    (spec.secretParameters ?? []).forEach((parameter) => parameter.grantRead(executionRole));
-
     const taskDefinition = new ecs.FargateTaskDefinition(this, `${spec.name}-task-definition`, {
       cpu: 2048,
       memoryLimitMiB: 4096,
@@ -325,7 +317,7 @@ export class EcsMonitoring extends Construct {
       essential: true,
       entryPoint: spec.entryPoint,
       command: spec.command,
-      secrets: spec.secrets,
+      environment: spec.environment,
       logging: ecs.LogDrivers.awsLogs({
         logGroup: containerLogGroup,
         streamPrefix: 'ecs',
@@ -407,5 +399,23 @@ export class EcsMonitoring extends Construct {
       roleName: `ecs-victoria-${name}`,
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
+  }
+
+  private generateScrapeConfig(): string {
+    const lbDnsName = this.privateLoadBalancer.loadBalancerDnsName;
+
+    return `scrape_configs:
+  - job_name: victoriametrics
+    static_configs:
+      - targets:
+          - "localhost:8428"
+  - job_name: victorialogs
+    static_configs:
+      - targets:
+          - "${lbDnsName}:9428"
+  - job_name: victoriatraces
+    static_configs:
+      - targets:
+          - "${lbDnsName}:10428"`;
   }
 }
