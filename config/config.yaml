@@ -3,7 +3,7 @@ ecsServices:
     port: 8000
     cpu: 256
     memory: 512
-    desiredCount: 0
+    desiredCount: 1
     secrets:
       - name: ENV_DB_PASSWORD
       - name: ENV_RABBITMQ_PASSWORD
@@ -11,3 +11,14 @@ ecsServices:
       - name: ENV_JWT_REFRESH_SECRET
     publicLb:
       domainHead: mimir-server
+  - name: Sauron
+    port: 8002
+    cpu: 256
+    memory: 512
+    desiredCount: 1
+    secrets:
+      - name: GOOGLE_API_KEY
+      - name: SCM_PEM_ENCRYPTION_KEY
+      - name: ENV_DB_PASSWORD
+    # publicLb:
+    #   domainHead: mimir-server

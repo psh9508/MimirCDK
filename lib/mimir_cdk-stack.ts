@@ -75,6 +75,11 @@ export class MimirCdkStack extends cdk.Stack {
       privateDnsEnabled: true,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     });
+    vpc.addInterfaceEndpoint('secretsmanager-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
     const cluster = new ecs.Cluster(this, 'mimir-cicd-cluster', { vpc });
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
