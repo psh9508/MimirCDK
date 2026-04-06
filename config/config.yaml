@@ -9,8 +9,8 @@ ecsServices:
       - name: ENV_RABBITMQ_PASSWORD
       - name: ENV_JWT_SECRET
       - name: ENV_JWT_REFRESH_SECRET
-    publicLb:
-      domainHead: mimir-server
+    # publicLb:
+    #   domainHead: auth-server
   - name: Sauron
     port: 8002
     cpu: 256
@@ -20,5 +20,18 @@ ecsServices:
       - name: GOOGLE_API_KEY
       - name: SCM_PEM_ENCRYPTION_KEY
       - name: ENV_DB_PASSWORD
-    # publicLb:
-    #   domainHead: mimir-server
+    publicLb:
+      domainHead: sauron
+
+databases:
+  - name: SauronDB
+    username: sauron_admin
+    engineVersion: "15.17"
+    instanceClass: t3.micro
+    allocatedStorage: 20
+    maxAllocatedStorage: 100
+    databaseName: sauron
+    port: 5432
+    multiAz: false
+    deletionProtection: false
+    backupRetentionDays: 7

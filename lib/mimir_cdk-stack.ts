@@ -12,6 +12,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as rds from 'aws-cdk-lib/aws-rds';
 import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
 import { EcsMonitoring } from './constructs/ecs-monitoring';
 
@@ -158,55 +159,56 @@ export class MimirCdkStack extends cdk.Stack {
         securityGroups: [serviceSecurityGroup],
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       });
-      // Public Load Balancer (optional)
-      // if (ecsService.publicLb) {
-        // const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
-        //   vpc,
-        //   allowAllOutbound: true,
-        //   description: `Public load balancer for ${serviceName}`,
-        // });
-        // loadBalancerSecurityGroup.addIngressRule(
-        //   ec2.Peer.anyIpv4(),
-        //   ec2.Port.tcp(80),
-        //   'Allow HTTP traffic to load balancer',
-        // );
-        // serviceSecurityGroup.addIngressRule(
-        //   loadBalancerSecurityGroup,
-        //   ec2.Port.tcp(ecsService.port),
-        //   `Allow public LB to reach ${serviceName}`,
-        // );
+      
+      if (ecsService.publicLb) {
+        const loadBalancerSecurityGroup = new ec2.SecurityGroup(this, `${serviceName}-lb-sg`, {
+          vpc,
+          allowAllOutbound: true,
+          description: `Public load balancer for ${serviceName}`,
+        });
+        loadBalancerSecurityGroup.addIngressRule(
+          ec2.Peer.anyIpv4(),
+          ec2.Port.tcp(80),
+          'Allow HTTP traffic to load balancer',
+        );
+        serviceSecurityGroup.addIngressRule(
+          loadBalancerSecurityGroup,
+          ec2.Port.tcp(ecsService.port),
+          `Allow public LB to reach ${serviceName}`,
+        );
 
-    //     const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
-    //       vpc,
-    //       internetFacing: true,
-    //       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-    //       securityGroup: loadBalancerSecurityGroup,
-    //       loadBalancerName: `${ecsService.publicLb.domainHead}-alb`,
-    //     });
+        const loadBalancer = new elbv2.ApplicationLoadBalancer(this, `${serviceName}-alb`, {
+          vpc,
+          internetFacing: true,
+          vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+          securityGroup: loadBalancerSecurityGroup,
+          loadBalancerName: `${ecsService.publicLb.domainHead}-alb`,
+        });
 
-    //     const listener = loadBalancer.addListener(`${serviceName}-listener`, {
-    //       port: 80,
-    //       open: true,
-    //     });
+        const listener = loadBalancer.addListener(`${serviceName}-listener`, {
+          port: 80,
+          open: true,
+        });
 
-    //     listener.addTargets(`${serviceName}-targets`, {
-    //       port: ecsService.port,
-    //       targets: [
-    //         fargateService.loadBalancerTarget({
-    //           containerName: serviceName,
-    //           containerPort: ecsService.port,
-    //         }),
-    //       ],
-    //       healthCheck: {
-    //         path: '/',
-    //         healthyHttpCodes: '200-399',
-    //       },
-    //     });
+        listener.addTargets(`${serviceName}-targets`, {
+          port: ecsService.port,
+          protocol: elbv2.ApplicationProtocol.HTTP,
+          targets: [
+            fargateService.loadBalancerTarget({
+              containerName: serviceName,
+              containerPort: ecsService.port,
+            }),
+          ],
+          healthCheck: {
+            path: '/health',
+            healthyHttpCodes: '200',
+          },
+        });
 
-    //     new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
-    //       value: loadBalancer.loadBalancerDnsName,
-    //     });
-      // }
+        new cdk.CfnOutput(this, `${serviceName}-lb-dns`, {
+          value: loadBalancer.loadBalancerDnsName,
+        });
+      }
       // CI/CD Pipeline
       new EcsServicePipeline(this, `${serviceName}-pipeline`, {
         serviceName,
@@ -214,6 +216,65 @@ export class MimirCdkStack extends cdk.Stack {
         ecrRepository,
         buildSpec,
         fargateService,
+      });
+    }
+
+    // RDS Security Group
+    const dbSecurityGroup = new ec2.SecurityGroup(this, 'db-security-group', {
+      vpc,
+      allowAllOutbound: false,
+      description: 'Security group for RDS instances',
+    });
+    dbSecurityGroup.addIngressRule(
+      serviceSecurityGroup,
+      ec2.Port.tcp(5432),
+      'Allow PostgreSQL access from ECS services',
+    );
+
+    // RDS Databases
+    for (const dbConfig of config.databases) {
+      const dbName = dbConfig.name;
+
+      // Parse instance class (e.g., "t3.micro" -> T3, MICRO)
+      const [instanceClassStr, instanceSizeStr] = dbConfig.instanceClass.split('.');
+      const instanceClass = ec2.InstanceClass[instanceClassStr.toUpperCase() as keyof typeof ec2.InstanceClass];
+      const instanceSize = ec2.InstanceSize[instanceSizeStr.toUpperCase() as keyof typeof ec2.InstanceSize];
+
+      const database = new rds.DatabaseInstance(this, `${dbName}-instance`, {
+        engine: rds.DatabaseInstanceEngine.postgres({
+          version: rds.PostgresEngineVersion.of(
+            dbConfig.engineVersion,
+            dbConfig.engineVersion.split('.')[0],
+          ),
+        }),
+        instanceType: ec2.InstanceType.of(instanceClass, instanceSize),
+        vpc,
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        securityGroups: [dbSecurityGroup],
+        databaseName: dbConfig.databaseName,
+        credentials: rds.Credentials.fromGeneratedSecret(dbConfig.username, {
+          secretName: `${dbName}-credentials`,
+        }),
+        allocatedStorage: dbConfig.allocatedStorage,
+        maxAllocatedStorage: dbConfig.maxAllocatedStorage,
+        port: dbConfig.port,
+        multiAz: dbConfig.multiAz,
+        deletionProtection: dbConfig.deletionProtection,
+        backupRetention: cdk.Duration.days(dbConfig.backupRetentionDays),
+        removalPolicy: dbConfig.deletionProtection
+          ? cdk.RemovalPolicy.RETAIN
+          : cdk.RemovalPolicy.SNAPSHOT,
+      });
+
+      // Output the endpoint
+      new cdk.CfnOutput(this, `${dbName}-endpoint`, {
+        value: database.dbInstanceEndpointAddress,
+        description: `${dbName} database endpoint`,
+      });
+
+      new cdk.CfnOutput(this, `${dbName}-secret-arn`, {
+        value: database.secret?.secretArn || '',
+        description: `${dbName} credentials secret ARN`,
       });
     }
   }
