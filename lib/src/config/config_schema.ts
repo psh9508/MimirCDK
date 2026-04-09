@@ -14,8 +14,16 @@ export const ecsServiceConfigSchema = z.object({
   publicLb: z
     .object({
       domainHead: z.string(),
+      allowedCidrs: z.array(z.string()).optional(),
     })
     .optional(),
+});
+
+export const cacheConfigSchema = z.object({
+  name: z.string(),
+  engine: z.enum(['valkey', 'redis', 'memcached']).default('valkey'),
+  nodeType: z.string().default('cache.t3.micro'),
+  numNodes: z.number().default(1),
 });
 
 export const databaseConfigSchema = z.object({
@@ -32,12 +40,20 @@ export const databaseConfigSchema = z.object({
   backupRetentionDays: z.number().default(7),
 });
 
-export const configSchema = z.object({
+export const clusterConfigSchema = z.object({
+  name: z.string(),
   ecsServices: z.array(ecsServiceConfigSchema).default([]),
+});
+
+export const configSchema = z.object({
+  clusters: z.array(clusterConfigSchema).default([]),
   databases: z.array(databaseConfigSchema).default([]),
+  caches: z.array(cacheConfigSchema).default([]),
 });
 
 export type SecretConfig = z.infer<typeof secretConfigSchema>;
 export type EcsServiceConfig = z.infer<typeof ecsServiceConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
+export type CacheConfig = z.infer<typeof cacheConfigSchema>;
+export type ClusterConfig = z.infer<typeof clusterConfigSchema>;
 export type Config = z.infer<typeof configSchema>;

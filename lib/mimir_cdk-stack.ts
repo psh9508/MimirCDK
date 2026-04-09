@@ -15,6 +15,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
 import { EcsMonitoring } from './constructs/ecs-monitoring';
+import { ElastiCache } from './constructs/elasticache';
 
 const config = getConfig();
 
@@ -81,7 +82,6 @@ export class MimirCdkStack extends cdk.Stack {
       privateDnsEnabled: true,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     });
-    const cluster = new ecs.Cluster(this, 'mimir-cicd-cluster', { vpc });
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
       allowAllOutbound: true,
@@ -100,7 +100,13 @@ export class MimirCdkStack extends cdk.Stack {
       mainServiceSecurityGroup: serviceSecurityGroup,
     });
 
-    for (const ecsService of config.ecsServices) {
+    for (const clusterConfig of config.clusters) {
+      const cluster = new ecs.Cluster(this, `${clusterConfig.name}-cluster`, {
+        vpc,
+        clusterName: clusterConfig.name,
+      });
+
+    for (const ecsService of clusterConfig.ecsServices) {
       const serviceName = ecsService.name;
       const repositoryName = `mimir/${serviceName.toLowerCase()}`;
 
@@ -151,9 +157,10 @@ export class MimirCdkStack extends cdk.Stack {
       });
 
       // ECS Fargate Service (desiredCount: 0 이면 태스크 없이 서비스만 생성)
-      const fargateService = new ecs.FargateService(this, `${serviceName}-service`, {
+      const fargateService = new ecs.FargateService(this, `${serviceName}-ecs-service`, {
         cluster,
         taskDefinition,
+        serviceName: serviceName,
         desiredCount: ecsService.desiredCount,
         assignPublicIp: false,
         securityGroups: [serviceSecurityGroup],
@@ -166,11 +173,23 @@ export class MimirCdkStack extends cdk.Stack {
           allowAllOutbound: true,
           description: `Public load balancer for ${serviceName}`,
         });
-        loadBalancerSecurityGroup.addIngressRule(
-          ec2.Peer.anyIpv4(),
-          ec2.Port.tcp(80),
-          'Allow HTTP traffic to load balancer',
-        );
+
+        if (ecsService.publicLb.allowedCidrs && ecsService.publicLb.allowedCidrs.length > 0) {
+          for (const cidr of ecsService.publicLb.allowedCidrs) {
+            loadBalancerSecurityGroup.addIngressRule(
+              ec2.Peer.ipv4(cidr),
+              ec2.Port.tcp(80),
+              `Allow HTTP from ${cidr}`,
+            );
+          }
+        } else {
+          loadBalancerSecurityGroup.addIngressRule(
+            ec2.Peer.anyIpv4(),
+            ec2.Port.tcp(80),
+            'Allow HTTP traffic to load balancer',
+          );
+        }
+
         serviceSecurityGroup.addIngressRule(
           loadBalancerSecurityGroup,
           ec2.Port.tcp(ecsService.port),
@@ -187,7 +206,7 @@ export class MimirCdkStack extends cdk.Stack {
 
         const listener = loadBalancer.addListener(`${serviceName}-listener`, {
           port: 80,
-          open: true,
+          open: !(ecsService.publicLb.allowedCidrs && ecsService.publicLb.allowedCidrs.length > 0),
         });
 
         listener.addTargets(`${serviceName}-targets`, {
@@ -209,6 +228,7 @@ export class MimirCdkStack extends cdk.Stack {
           value: loadBalancer.loadBalancerDnsName,
         });
       }
+
       // CI/CD Pipeline
       new EcsServicePipeline(this, `${serviceName}-pipeline`, {
         serviceName,
@@ -218,6 +238,7 @@ export class MimirCdkStack extends cdk.Stack {
         fargateService,
       });
     }
+    } // end of clusterConfig loop
 
     // RDS Security Group
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'db-security-group', {
@@ -275,6 +296,18 @@ export class MimirCdkStack extends cdk.Stack {
       new cdk.CfnOutput(this, `${dbName}-secret-arn`, {
         value: database.secret?.secretArn || '',
         description: `${dbName} credentials secret ARN`,
+      });
+    }
+
+    // ElastiCache
+    for (const cacheConfig of config.caches) {
+      new ElastiCache(this, `${cacheConfig.name}-cache`, {
+        name: cacheConfig.name,
+        engine: cacheConfig.engine,
+        nodeType: cacheConfig.nodeType,
+        numNodes: cacheConfig.numNodes,
+        vpc,
+        serviceSecurityGroup,
       });
     }
   }

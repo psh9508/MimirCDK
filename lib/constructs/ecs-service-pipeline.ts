@@ -52,6 +52,7 @@ export class EcsServicePipeline extends Construct {
       bucket: artifactBucket,
       bucketKey: `${serviceName}/source.zip`,
       output: sourceOutput,
+      trigger: aws_codepipeline_actions.S3Trigger.NONE,
     });
     this.pipeline.addStage({
       stageName: 'Source',

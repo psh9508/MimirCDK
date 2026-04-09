@@ -1,27 +1,33 @@
-ecsServices:
-  - name: AuthServer
-    port: 8000
-    cpu: 256
-    memory: 512
-    desiredCount: 1
-    secrets:
-      - name: ENV_DB_PASSWORD
-      - name: ENV_RABBITMQ_PASSWORD
-      - name: ENV_JWT_SECRET
-      - name: ENV_JWT_REFRESH_SECRET
-    # publicLb:
-    #   domainHead: auth-server
-  - name: Sauron
-    port: 8002
-    cpu: 256
-    memory: 512
-    desiredCount: 1
-    secrets:
-      - name: GOOGLE_API_KEY
-      - name: SCM_PEM_ENCRYPTION_KEY
-      - name: ENV_DB_PASSWORD
-    publicLb:
-      domainHead: sauron
+clusters:
+  - name: SauronCluster
+    ecsServices:
+      - name: AuthServer
+        port: 8000
+        cpu: 256
+        memory: 512
+        desiredCount: 1
+        secrets:
+          - name: ENV_DB_PASSWORD
+          - name: ENV_RABBITMQ_PASSWORD
+          - name: ENV_JWT_SECRET
+          - name: ENV_JWT_REFRESH_SECRET
+        # publicLb:
+        #   domainHead: auth
+      - name: Sauron
+        port: 8002
+        cpu: 256
+        memory: 512
+        desiredCount: 1
+        secrets:
+          - name: GOOGLE_API_KEY
+          - name: SCM_AUTH_ENCRYPTION_KEY
+          - name: ENV_DB_PASSWORD
+        publicLb:
+          domainHead: sauron
+          allowedCidrs:
+            - 61.34.177.0/24
+            - 203.215.192.0/19
+            - 61.34.183.7/32
 
 databases:
   - name: SauronDB
@@ -35,3 +41,20 @@ databases:
     multiAz: false
     deletionProtection: false
     backupRetentionDays: 7
+  - name: AuthDB
+    username: auth_admin
+    engineVersion: "15.17"
+    instanceClass: t3.micro
+    allocatedStorage: 20
+    maxAllocatedStorage: 100
+    databaseName: auth
+    port: 5432
+    multiAz: false
+    deletionProtection: false
+    backupRetentionDays: 7
+
+caches:
+  - name: AuthCache
+    engine: valkey
+    nodeType: cache.t3.micro
+    numNodes: 1
