@@ -26,6 +26,14 @@ export const cacheConfigSchema = z.object({
   numNodes: z.number().default(1),
 });
 
+export const staticSiteConfigSchema = z.object({
+  name: z.string(),
+  bucketName: z.string(),
+  domainHead: z.string().optional(),
+  cicd: z.enum(['github', 'gitlab']).default('github'),
+  wafAllowIps: z.array(z.string()).default([]),
+});
+
 export const databaseConfigSchema = z.object({
   name: z.string(),
   username: z.string(),
@@ -49,11 +57,13 @@ export const configSchema = z.object({
   clusters: z.array(clusterConfigSchema).default([]),
   databases: z.array(databaseConfigSchema).default([]),
   caches: z.array(cacheConfigSchema).default([]),
+  staticSites: z.array(staticSiteConfigSchema).default([]),
 });
 
 export type SecretConfig = z.infer<typeof secretConfigSchema>;
 export type EcsServiceConfig = z.infer<typeof ecsServiceConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 export type CacheConfig = z.infer<typeof cacheConfigSchema>;
+export type StaticSiteConfig = z.infer<typeof staticSiteConfigSchema>;
 export type ClusterConfig = z.infer<typeof clusterConfigSchema>;
 export type Config = z.infer<typeof configSchema>;

@@ -58,3 +58,12 @@ caches:
     engine: valkey
     nodeType: cache.t3.micro
     numNodes: 1
+
+staticSites:
+  - name: Sauron
+    bucketName: sauron-frontend
+    # domainHead: sauron
+    wafAllowIps:
+      - 61.34.177.0/24
+      - 203.215.192.0/19
+      - 61.34.183.7/32

@@ -16,12 +16,20 @@ import * as rds from 'aws-cdk-lib/aws-rds';
 import { EcsServicePipeline } from './constructs/ecs-service-pipeline';
 import { EcsMonitoring } from './constructs/ecs-monitoring';
 import { ElastiCache } from './constructs/elasticache';
+import { StaticSite } from './constructs/static-site';
+import { WafStack } from './waf-stack';
 
 const config = getConfig();
 
+export interface MimirCdkStackProps extends cdk.StackProps {
+  wafStack: WafStack;
+}
+
 export class MimirCdkStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: MimirCdkStackProps) {
     super(scope, id, props);
+
+    const { wafStack } = props;
 
     const buildSpecObject = yaml.parse(
       fs.readFileSync('pipeline/buildspec-build.yml', 'utf8'),
@@ -308,6 +316,17 @@ export class MimirCdkStack extends cdk.Stack {
         numNodes: cacheConfig.numNodes,
         vpc,
         serviceSecurityGroup,
+      });
+    }
+
+    // Static Sites (CloudFront + S3)
+    for (const siteConfig of config.staticSites) {
+      new StaticSite(this, `${siteConfig.name}-static-site`, {
+        name: siteConfig.name,
+        bucketName: siteConfig.bucketName,
+        domainHead: siteConfig.domainHead,
+        cicd: siteConfig.cicd,
+        webAclArn: wafStack.webAclArns.get(siteConfig.name),
       });
     }
   }

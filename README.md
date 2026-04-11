@@ -26,5 +26,5 @@ aws sso login --profile cam2025-superpower
 2. Deploy the CDK stack with the same profile:
 
 ```bash
-npx cdk deploy --profile cam2025-superpower
+npx cdk deploy --all --profile cam2025-superpower
 ```

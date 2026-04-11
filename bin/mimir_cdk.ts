@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib/core';
 import { MimirCdkStack } from '../lib/mimir_cdk-stack';
+import { WafStack } from '../lib/waf-stack';
 
 const app = new cdk.App();
-new MimirCdkStack(app, 'MimirCdkStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+const account = '896824691859';
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  env: { account: '896824691859', region: 'ap-northeast-2' },
-
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
+// WAF Stack (must be in us-east-1 for CloudFront)
+const wafStack = new WafStack(app, 'WafStack', {
+  env: { account, region: 'us-east-1' },
+  crossRegionReferences: true,
 });
+
+// Main Stack
+const mainStack = new MimirCdkStack(app, 'MimirCdkStack', {
+  env: { account, region: 'ap-northeast-2' },
+  crossRegionReferences: true,
+  wafStack,
+});
+
+mainStack.addDependency(wafStack);
