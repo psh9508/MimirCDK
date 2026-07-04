@@ -11,8 +11,8 @@ clusters:
           - name: ENV_RABBITMQ_PASSWORD
           - name: ENV_JWT_SECRET
           - name: ENV_JWT_REFRESH_SECRET
-        # publicLb:
-        #   domainHead: auth
+        publicLb:
+          domainHead: auth
       - name: Sauron
         port: 8002
         cpu: 256

@@ -90,6 +90,11 @@ export class MimirCdkStack extends cdk.Stack {
       privateDnsEnabled: true,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     });
+    vpc.addInterfaceEndpoint('kms-endpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.KMS,
+      privateDnsEnabled: true,
+      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+    });
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
       allowAllOutbound: true,
@@ -125,10 +130,19 @@ export class MimirCdkStack extends cdk.Stack {
       );
 
       // ECS Task Definition
+      const taskRole = new iam.Role(this, `${serviceName}-task-role`, {
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      });
+      taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ['kms:GetPublicKey', 'kms:Sign', 'kms:Verify', 'kms:DescribeKey'],
+        resources: ['*'],
+      }));
+
       const taskDefinition = new ecs.FargateTaskDefinition(this, `${serviceName}-taskdef`, {
         cpu: ecsService.cpu,
         memoryLimitMiB: ecsService.memory,
         executionRole: taskExecutionRole,
+        taskRole,
       });
 
       // Create secret in Secrets Manager and build container secrets map
