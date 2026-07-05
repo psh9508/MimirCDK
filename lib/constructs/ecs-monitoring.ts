@@ -111,7 +111,7 @@ export class EcsMonitoring extends Construct {
       vpc,
       internetFacing: false,
       securityGroup: albSecurityGroup,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       loadBalancerName: 'monitoring-private-alb',
     });
 
@@ -153,7 +153,7 @@ export class EcsMonitoring extends Construct {
       vpc,
       encrypted: true,
       securityGroup: this.efsSecurityGroup,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       lifecyclePolicy: efs.LifecyclePolicy.AFTER_14_DAYS,
       performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
       throughputMode: efs.ThroughputMode.BURSTING,
@@ -351,7 +351,7 @@ export class EcsMonitoring extends Construct {
       desiredCount: 1,
       assignPublicIp: false,
       securityGroups: [this.serviceSecurityGroup],
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       healthCheckGracePeriod: cdk.Duration.seconds(60),

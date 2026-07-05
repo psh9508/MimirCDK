@@ -49,7 +49,10 @@ export class MimirCdkStack extends cdk.Stack {
 
     const vpc = new ec2.Vpc(this, 'mimir-cicd-vpc', {
       maxAzs: 2,
-      natGateways: 0,
+      // NAT 1개만 배치 (AZ당 1개가 아님). 비용 절감 목적.
+      // 트레이드오프: 이 NAT가 속한 AZ가 죽으면 두 AZ의 services 서브넷 모두
+      // 아웃바운드가 끊긴다 (SPOF). AZ당 이중화하려면 natGateways: 2 필요.
+      natGateways: 1,
       subnetConfiguration: [
         {
           name: 'ingress',
@@ -57,7 +60,7 @@ export class MimirCdkStack extends cdk.Stack {
         },
         {
           name: 'services',
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
         },
       ],
     });
@@ -68,55 +71,10 @@ export class MimirCdkStack extends cdk.Stack {
       });
     }
 
-    // PrivateLink endpoints so Fargate tasks can reach ECR/Logs/S3 without NAT
-    vpc.addInterfaceEndpoint('ecr-api-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-    vpc.addInterfaceEndpoint('ecr-dkr-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-    vpc.addInterfaceEndpoint('cloudwatch-logs-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
+    // S3는 Gateway 엔드포인트라 무료이므로 유지 (NAT를 거치지 않고 라우트테이블로 직접 처리됨)
     vpc.addGatewayEndpoint('s3-endpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
-    vpc.addInterfaceEndpoint('ssm-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.SSM,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-    vpc.addInterfaceEndpoint('secretsmanager-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-    vpc.addInterfaceEndpoint('kms-endpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.KMS,
-      privateDnsEnabled: true,
-      subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-    // EKS 관리형 노드그룹이 NAT 없이 동작하는 데 필요한 추가 인터페이스 엔드포인트.
-    // ec2: VPC CNI의 ENI/보조 IP 관리, sts: IAM 역할 assume, eks-auth: Pod Identity 자격증명.
-    const eksNodeEndpoints: { id: string; service: ec2.InterfaceVpcEndpointAwsService }[] = [
-      { id: 'ec2-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EC2 },
-      { id: 'sts-endpoint', service: ec2.InterfaceVpcEndpointAwsService.STS },
-      { id: 'eks-auth-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EKS_AUTH },
-      { id: 'elb-endpoint', service: ec2.InterfaceVpcEndpointAwsService.ELASTIC_LOAD_BALANCING },
-    ];
-    for (const { id, service } of eksNodeEndpoints) {
-      vpc.addInterfaceEndpoint(id, {
-        service,
-        privateDnsEnabled: true,
-        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      });
-    }
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
       allowAllOutbound: true,
@@ -208,7 +166,7 @@ export class MimirCdkStack extends cdk.Stack {
         desiredCount: ecsService.desiredCount,
         assignPublicIp: false,
         securityGroups: [serviceSecurityGroup],
-        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       });
       
       if (ecsService.publicLb) {
@@ -328,7 +286,7 @@ export class MimirCdkStack extends cdk.Stack {
         }),
         instanceType: ec2.InstanceType.of(instanceClass, instanceSize),
         vpc,
-        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         securityGroups: [dbSecurityGroup],
         databaseName: dbConfig.databaseName,
         credentials: rds.Credentials.fromGeneratedSecret(dbConfig.username, {

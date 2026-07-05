@@ -41,7 +41,7 @@ export class ElastiCache extends Construct {
     // Subnet Group
     const subnetGroup = new elasticache.CfnSubnetGroup(this, 'subnet-group', {
       description: `Subnet group for ${name}`,
-      subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnetIds,
+      subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds,
       cacheSubnetGroupName: `${name.toLowerCase()}-subnet-group`,
     });
 
