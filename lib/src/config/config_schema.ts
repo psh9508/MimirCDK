@@ -58,6 +58,7 @@ export const configSchema = z.object({
   databases: z.array(databaseConfigSchema).default([]),
   caches: z.array(cacheConfigSchema).default([]),
   staticSites: z.array(staticSiteConfigSchema).default([]),
+  eksSecurityGroupId: z.string().optional(),
 });
 
 export type SecretConfig = z.infer<typeof secretConfigSchema>;

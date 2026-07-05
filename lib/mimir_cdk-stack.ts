@@ -61,6 +61,13 @@ export class MimirCdkStack extends cdk.Stack {
         },
       ],
     });
+    // EKS AWS Load Balancer Controller가 인터넷향 ELB를 배치할 서브넷을 자동 탐색하도록 태깅
+    for (const subnet of vpc.publicSubnets) {
+      cdk.Tags.of(subnet).add('kubernetes.io/role/elb', '1', {
+        includeResourceTypes: ['AWS::EC2::Subnet'],
+      });
+    }
+
     // PrivateLink endpoints so Fargate tasks can reach ECR/Logs/S3 without NAT
     vpc.addInterfaceEndpoint('ecr-api-endpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.ECR,
@@ -95,6 +102,20 @@ export class MimirCdkStack extends cdk.Stack {
       privateDnsEnabled: true,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     });
+    // EKS 관리형 노드그룹이 NAT 없이 동작하는 데 필요한 추가 인터페이스 엔드포인트.
+    // ec2: VPC CNI의 ENI/보조 IP 관리, sts: IAM 역할 assume, eks-auth: Pod Identity 자격증명.
+    const eksNodeEndpoints: { id: string; service: ec2.InterfaceVpcEndpointAwsService }[] = [
+      { id: 'ec2-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EC2 },
+      { id: 'sts-endpoint', service: ec2.InterfaceVpcEndpointAwsService.STS },
+      { id: 'eks-auth-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EKS_AUTH },
+    ];
+    for (const { id, service } of eksNodeEndpoints) {
+      vpc.addInterfaceEndpoint(id, {
+        service,
+        privateDnsEnabled: true,
+        subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      });
+    }
     const serviceSecurityGroup = new ec2.SecurityGroup(this, 'mimir-cicd-sg', {
       vpc,
       allowAllOutbound: true,
@@ -273,6 +294,20 @@ export class MimirCdkStack extends cdk.Stack {
       ec2.Port.tcp(5432),
       'Allow PostgreSQL access from ECS services',
     );
+
+    if (config.eksSecurityGroupId) {
+      const eksSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
+        this,
+        'eks-security-group',
+        config.eksSecurityGroupId,
+        { allowAllOutbound: false, mutable: false },
+      );
+      dbSecurityGroup.addIngressRule(
+        eksSecurityGroup,
+        ec2.Port.tcp(5432),
+        'Allow PostgreSQL access from EKS authserver pods',
+      );
+    }
 
     // RDS Databases
     for (const dbConfig of config.databases) {

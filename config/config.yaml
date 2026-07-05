@@ -67,3 +67,7 @@ staticSites:
       - 61.34.177.0/24
       - 203.215.192.0/19
       - 61.34.183.7/32
+
+# EKS cluster security group (created outside this CDK stack via eksctl/aws cli),
+# imported to allow AuthServer pods running on EKS to reach RDS.
+eksSecurityGroupId: sg-0fc6a5cb050ae4e1d
