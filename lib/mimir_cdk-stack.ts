@@ -108,6 +108,7 @@ export class MimirCdkStack extends cdk.Stack {
       { id: 'ec2-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EC2 },
       { id: 'sts-endpoint', service: ec2.InterfaceVpcEndpointAwsService.STS },
       { id: 'eks-auth-endpoint', service: ec2.InterfaceVpcEndpointAwsService.EKS_AUTH },
+      { id: 'elb-endpoint', service: ec2.InterfaceVpcEndpointAwsService.ELASTIC_LOAD_BALANCING },
     ];
     for (const { id, service } of eksNodeEndpoints) {
       vpc.addInterfaceEndpoint(id, {
